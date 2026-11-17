@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermit — Time Stop Sound</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111016;color:#f4f0f6}body{min-height:100vh;margin:0;display:grid;place-items:center}.player{width:min(440px,calc(100vw - 48px));padding:32px;border:1px solid #40364c;border-radius:16px;background:#1b1721;box-sizing:border-box}.eyebrow{color:#caa7e8;text-transform:uppercase;letter-spacing:.15em;font-size:.72rem}h1{font-size:1.7rem;margin:12px 0 8px}p{color:#bbb1c2;line-height:1.5}button{border:0;border-radius:10px;background:#c3a3ed;color:#21142c;padding:13px 22px;font-size:1rem;font-weight:700;cursor:pointer}button:hover{background:#d8bfff}button:focus-visible{outline:3px solid white;outline-offset:3px}audio{width:100%;margin-top:22px}a{color:#d2b8ec}.source{font-size:.82rem;margin-bottom:0}
+</style></head>
+<body><main class="player"><div class="eyebrow">Hermit · Sound preview</div><h1>Time stop</h1><p>Compare the softer version with the original.</p><button id="play" type="button">▶ Play softer version</button><audio id="audio" controls preload="metadata" src="time-stop-soft-reverb.wav">Your browser does not support audio playback.</audio><p>Original</p><audio id="original" controls preload="metadata" src="time-stop-v2.wav"></audio><p class="source">Source: <a href="https://github.com/Fwkkk666/dsh-za-warudo/blob/main/assets/time-stop-v2.wav">Fwkkk666/dsh-za-warudo</a></p></main><script>const audio=document.getElementById('audio');document.getElementById('play').addEventListener('click',()=>{document.getElementById('original').pause();audio.currentTime=0;audio.play().catch(()=>{});});</script></body></html>

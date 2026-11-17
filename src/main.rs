@@ -2,7 +2,6 @@ use gtk::{gdk, gio, glib, graphene, prelude::*, subclass::prelude::*};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
-    time::Duration,
 };
 
 mod frame {
@@ -63,30 +62,51 @@ impl Frame {
         });
         frame
     }
-    fn flash(&self) {
-        self.imp().inverted.set(true);
+    fn set_inverted(&self, inverted: bool) {
+        self.imp().inverted.set(inverted);
         self.queue_draw();
-        let weak = self.downgrade();
-        glib::timeout_add_local_once(Duration::from_millis(650), move || {
-            if let Some(frame) = weak.upgrade() {
-                frame.imp().inverted.set(false);
-                frame.queue_draw();
-            }
-        });
     }
 }
+
+fn icon(svg: &str, size: i32) -> gtk::Image {
+    use gtk::gdk_pixbuf::prelude::*;
+    let loader = gtk::gdk_pixbuf::PixbufLoader::new();
+    loader.set_size(size, size);
+    let white = svg.replace("currentColor", "#ffffff");
+    if loader.write(white.as_bytes()).is_ok() && loader.close().is_ok() {
+        if let Some(pixbuf) = loader.pixbuf() {
+            return gtk::Image::from_pixbuf(Some(&pixbuf));
+        }
+    }
+    gtk::Image::new()
+}
+const PLAY: &str = include_str!("../assets/icons/play.svg");
+const PAUSE: &str = include_str!("../assets/icons/pause.svg");
+const OPEN: &str = include_str!("../assets/icons/folder-open.svg");
+const VOLUME: &str = include_str!("../assets/icons/volume-2.svg");
+const MAXIMIZE: &str = include_str!("../assets/icons/maximize.svg");
+const MINIMIZE: &str = include_str!("../assets/icons/minimize.svg");
+
+fn icon_button(svg: &str, tooltip: &str) -> gtk::Button {
+    let button = gtk::Button::builder()
+        .child(&icon(svg, 20))
+        .tooltip_text(tooltip)
+        .build();
+    button.add_css_class("video-button");
+    button
+}
+
 fn sound() -> Option<gtk::MediaFile> {
     let path = std::env::temp_dir().join(format!("hermit-pause-{}.wav", std::process::id()));
     std::fs::write(&path, include_bytes!("../assets/pause.wav")).ok()?;
     Some(gtk::MediaFile::for_filename(path))
 }
-fn toggle(media: &gtk::MediaFile, frame: &Frame, effect: &Option<gtk::MediaFile>) {
+fn toggle(media: &gtk::MediaFile, _frame: &Frame, effect: &Option<gtk::MediaFile>) {
     if !media.is_prepared() {
         return;
     }
     if media.is_playing() {
         media.pause();
-        frame.flash();
         if let Some(effect) = effect {
             effect.seek(0);
             effect.play();
@@ -130,20 +150,31 @@ fn build(app: &gtk::Application, file: Option<&gio::File>) {
         .build();
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let header = gtk::HeaderBar::new();
-    let open = gtk::Button::with_label("Open");
+    let open = icon_button(OPEN, "Open video");
+    open.set_child(Some(&icon(&OPEN.replace("currentColor", "#27272a"), 20)));
     header.pack_start(&open);
     let label = gtk::Label::new(Some("Open a video"));
     label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
     header.set_title_widget(Some(&label));
     window.set_titlebar(Some(&header));
     frame.add_css_class("video-frame");
-    root.append(&frame);
+    let overlay = gtk::Overlay::new();
+    overlay.set_hexpand(true);
+    overlay.set_vexpand(true);
+    overlay.set_child(Some(&frame));
+    let paused_icon = icon(PAUSE, 64);
+    paused_icon.add_css_class("pause-indicator");
+    paused_icon.set_halign(gtk::Align::Center);
+    paused_icon.set_valign(gtk::Align::Center);
+    paused_icon.set_can_target(false);
+    paused_icon.set_visible(false);
+    overlay.add_overlay(&paused_icon);
     let controls = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     controls.set_margin_top(12);
     controls.set_margin_bottom(12);
     controls.set_margin_start(16);
     controls.set_margin_end(16);
-    let play = gtk::Button::with_label("Play");
+    let play = icon_button(PLAY, "Play");
     controls.append(&play);
     let time = gtk::Label::new(Some("0:00"));
     controls.append(&time);
@@ -159,11 +190,35 @@ fn build(app: &gtk::Application, file: Option<&gio::File>) {
     volume.set_draw_value(false);
     volume.set_width_request(90);
     volume.set_tooltip_text(Some("Volume"));
+    controls.append(&icon(VOLUME, 18));
     controls.append(&volume);
-    root.append(&controls);
+    let fullscreen = icon_button(MAXIMIZE, "Fullscreen");
+    controls.append(&fullscreen);
+    controls.add_css_class("video-controls");
+    controls.set_halign(gtk::Align::Fill);
+    controls.set_valign(gtk::Align::End);
+    overlay.add_overlay(&controls);
+    root.append(&overlay);
+    let w = window.clone();
+    fullscreen.connect_clicked(move |button| {
+        if w.is_fullscreen() {
+            w.unfullscreen();
+            button.set_child(Some(&icon(MAXIMIZE, 20)));
+            button.set_tooltip_text(Some("Fullscreen"));
+        } else {
+            w.fullscreen();
+            button.set_child(Some(&icon(MINIMIZE, 20)));
+            button.set_tooltip_text(Some("Exit fullscreen"));
+        }
+    });
     window.set_child(Some(&root));
     let css = gtk::CssProvider::new();
-    css.load_from_data(".video-frame { background: #0d0d10; }");
+    css.load_from_data(".video-frame { background: #0d0d10; }
+        .video-controls { background: alpha(#101016, 0.88); border-radius: 12px; padding: 8px; color: white; }
+        .video-controls label { color: white; }
+        .video-button { background: transparent; border: 0; box-shadow: none; padding: 8px; }
+        .video-button:hover { background: alpha(white, 0.16); }
+        .pause-indicator { background: alpha(#101016, 0.60); border-radius: 99px; padding: 22px; }");
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,
@@ -176,9 +231,21 @@ fn build(app: &gtk::Application, file: Option<&gio::File>) {
     let e = effect.clone();
     play.connect_clicked(move |_| toggle(&m, &f, &e));
     let p = play.clone();
+    let f = frame.clone();
+    let indicator = paused_icon.clone();
     media.connect_playing_notify(move |m| {
-        p.set_label(if m.is_playing() { "Pause" } else { "Play" })
+        let paused = m.is_prepared() && !m.is_playing();
+        f.set_inverted(paused);
+        indicator.set_visible(paused);
+        p.set_child(Some(&icon(if m.is_playing() { PAUSE } else { PLAY }, 20)));
+        p.set_tooltip_text(Some(if m.is_playing() { "Pause" } else { "Play" }));
     });
+    let m = media.clone();
+    let f = frame.clone();
+    let e = effect.clone();
+    let click = gtk::GestureClick::new();
+    click.connect_released(move |_, _, _, _| toggle(&m, &f, &e));
+    frame.add_controller(click);
     let updating = Rc::new(Cell::new(false));
     let u = updating.clone();
     let m = media.clone();
